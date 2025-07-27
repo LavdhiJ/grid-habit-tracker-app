@@ -8,7 +8,9 @@ import dotenv from 'dotenv';
 import { initializeCronJobs } from './jobs/cronJob.js';
 import userRouter from './routes/user.routes.js' 
 import taskRouter from './routes/task.routes.js'
-
+import memoryRouter from './routes/memory.routes.js';
+import promptRouter from './routes/prompt.routes.js';
+import reflectionRouter from './routes/reflection.routes.js';
 
 dotenv.config();
 
@@ -23,12 +25,16 @@ app.use(cors({
     origin: "http://localhost:5000", // or "*" for Postman
     credentials: true, // 🔥 IMPORTANT
 }));
-app.use(express.json());
+
 initializeCronJobs() ;
 
 // Routes
 app.use('/api/v1/users', userRouter);
 app.use('/api/v1/tasks' , taskRouter);
+app.use('/api/v1/memories' , memoryRouter);
+app.use("/api/v1/prompts", promptRouter);
+app.use("/api/v1/reflections", reflectionRouter);
+
 app.get('/', (req, res) => {
   res.send('Habit Tracker API is running...');
 });
