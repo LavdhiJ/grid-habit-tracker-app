@@ -1,19 +1,41 @@
 import cron from 'node-cron';
 import ReminderService from '../services/ReminderService.js';
+import Reminder from '../models/reminder.model.js'
 
 export const initializeCronJobs = () => {
-  console.log('🕐 Initializing cron jobs...');
+  console.log(' Starting reminder cron jobs...');
 
-  // Check for reminders every minute
+  // Every minute: check for due reminders
   cron.schedule('* * * * *', async () => {
-    await ReminderService.checkAndSendReminders();
+    console.log(' Checking for due reminders...');
+    try {
+      await ReminderService.checkAndSendReminders();
+    } catch (error) {
+      console.error(' Error while sending reminders:', error);
+    }
   });
 
-  // Optional: Daily cleanup of old completed tasks
-  cron.schedule('0 2 * * *', async () => {
-    console.log('🧹 Running daily cleanup...');
-    // Add cleanup logic here
+  // Every day at midnight: clean up old reminders
+  cron.schedule('0 0 * * *', async () => {
+    console.log('🧹 Running reminder cleanup...');
+    await CleanupOldReminders();
   });
 
   console.log('✅ Cron jobs initialized');
+};
+
+export const CleanupOldReminders = async () => {
+  try {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const result = await Reminder.deleteMany({
+      status: { $in: ['sent', 'cancelled'] },
+      updatedAt: { $lt: thirtyDaysAgo }
+    });
+
+    console.log(` Cleaned up ${result.deletedCount} old reminders`);
+  } catch (error) {
+    console.error('Error in reminder cleanup:', error);
+  }
 };

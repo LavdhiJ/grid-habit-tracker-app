@@ -14,19 +14,7 @@ const taskSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
-  reminder: {
-  type: Boolean,
-  default: false,
-},
-reminderSent: {
-  type: Boolean,
-  default: false,
-},
-
-  reminder_date: {
-    type: Date,
-    default: null,
-  },
+ 
   status: {
     type: String,
     enum: ['todo', 'done'],

@@ -4,6 +4,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js'; 
 import mongoose from "mongoose";
+import ReminderService from "../services/ReminderService.js";
 
 class TaskController {
   static extractTaskDetails(input) {
@@ -59,13 +60,30 @@ class TaskController {
       title: taskDetails.title,
       description: description || null,
       due_date: taskDetails.due_date,
-      reminder_date: taskDetails.reminder_date,
-      reminder: !!taskDetails.reminder_date,
-        reminderSent: false,
       userId
     });
 
     await task.save();
+    if (taskDetails.hasReminder && taskDetails.reminder_date) {
+      try {
+        await ReminderService.createReminder(
+          userId,
+          'task',
+          task._id,
+          {
+            reminderDate: taskDetails.reminder_date,
+            reminderType: 'one-time',
+            title: `Task Reminder: ${task.title}`,
+            message: `Don't forget to complete: ${task.title}`
+          }
+        );
+        console.log(`✅ Reminder created for task: ${task.title}`);
+      } catch (reminderError) {
+        console.error('Error creating reminder:', reminderError);
+        // Don't fail task creation if reminder fails
+      }
+    }
+    
 
     return res
       .status(201)
@@ -124,6 +142,9 @@ class TaskController {
       filter.status = 'todo';
     }
 
+
+    
+
     const tasks = await Task.find(filter)
       .sort({ due_date: 1, reminder_date: 1, created_at: -1 })
       .limit(limit * 1)
@@ -131,8 +152,26 @@ class TaskController {
 
     const total = await Task.countDocuments(filter);
 
+ const taskIds = tasks.map(task => task._id);
+    const reminders = await ReminderService.getUserReminders(userId, 'task');
+    
+    // Add reminder info to tasks
+    const tasksWithReminders = tasks.map(task => {
+      const taskReminder = reminders.find(r => r.entityId.toString() === task._id.toString());
+      return {
+        ...task.toObject(),
+        reminder: taskReminder ? {
+          id: taskReminder._id,
+          reminderDate: taskReminder.reminderDate,
+          status: taskReminder.status,
+          reminderType: taskReminder.reminderType
+        } : null
+      };
+    });
+
+
     const responseData = {
-      tasks,
+     tasks: tasksWithReminders,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -155,10 +194,23 @@ class TaskController {
     if (!task) {
       throw new ApiError(404, 'Task not found');
     }
+     const reminders = await ReminderService.getUserReminders(userId, 'task');
+    const taskReminder = reminders.find(r => r.entityId.toString() === task._id.toString());
+
+    const taskWithReminder = {
+      ...task.toObject(),
+      reminder: taskReminder ? {
+        id: taskReminder._id,
+        reminderDate: taskReminder.reminderDate,
+        status: taskReminder.status,
+        reminderType: taskReminder.reminderType
+      } : null
+    };
+
 
     return res
       .status(200)
-      .json(new ApiResponse(200, task, 'Task retrieved successfully'));
+      .json(new ApiResponse(200, taskWithReminder, 'Task retrieved successfully'));
   });
 
   static updateTask = asyncHandler(async (req, res) => {
@@ -174,7 +226,15 @@ class TaskController {
       const taskDetails = TaskController.extractTaskDetails(updates.input);
       updates.title = taskDetails.title;
       updates.due_date = taskDetails.due_date;
-      updates.reminder_date = taskDetails.reminder_date;
+
+        // Handle reminder updates
+      if (taskDetails.hasReminder && taskDetails.reminder_date) {
+        reminderUpdates = {
+          reminderDate: taskDetails.reminder_date,
+          title: `Task Reminder: ${taskDetails.title}`,
+          message: `Don't forget to complete: ${taskDetails.title}`
+        };
+      }
       delete updates.input;
     }
     
@@ -187,6 +247,26 @@ class TaskController {
 
     if (!task) {
       throw new ApiError(404, 'Task not found');
+    }
+ if (reminderUpdates) {
+      try {
+        // Check if reminder exists
+        const existingReminders = await ReminderService.getUserReminders(userId, 'task');
+        const existingReminder = existingReminders.find(r => r.entityId.toString() === task._id.toString());
+
+        if (existingReminder) {
+          // Update existing reminder
+          await ReminderService.updateReminder(existingReminder._id, reminderUpdates);
+        } else {
+          // Create new reminder
+          await ReminderService.createReminder(userId, 'task', task._id, {
+            ...reminderUpdates,
+            reminderType: 'one-time'
+          });
+        }
+      } catch (reminderError) {
+        console.error('Error updating reminder:', reminderError);
+      }
     }
 
     return res
@@ -207,6 +287,15 @@ class TaskController {
     if (task.status === 'todo') {
       task.status = 'done';
       task.completed_at = new Date();
+         try {
+        const reminders = await ReminderService.getUserReminders(userId, 'task');
+        const taskReminder = reminders.find(r => r.entityId.toString() === task._id.toString());
+        if (taskReminder && taskReminder.status === 'active') {
+          await ReminderService.cancelReminder(taskReminder._id);
+        }
+      } catch (error) {
+        console.error('Error canceling reminder:', error);
+      }
     } else {
       task.status = 'todo';
       task.completed_at = null;
@@ -228,7 +317,17 @@ class TaskController {
     if (!task) {
       throw new ApiError(404, 'Task not found');
     }
-
+try {
+      const reminders = await ReminderService.getUserReminders(userId, 'task');
+      const taskReminders = reminders.filter(r => r.entityId.toString() === task._id.toString());
+      for (const reminder of taskReminders) {
+        if (reminder.status === 'active') {
+          await ReminderService.cancelReminder(reminder._id);
+        }
+      }
+    } catch (error) {
+      console.error('Error canceling reminders:', error);
+    }
     return res.status(200).json(new ApiResponse(200, {}, 'Task deleted successfully'));
   });
 
@@ -272,14 +371,15 @@ class TaskController {
         }
       }
     ]);
-
+ const reminderStats = await ReminderService.getReminderStats(userId);
     const responseData = {
       overview: stats[0] || {
         total: 0,
         completed: 0,
         pending: 0,
         overdue: 0
-      }
+      },
+       reminders: reminderStats
     };
 
     return res
@@ -287,18 +387,7 @@ class TaskController {
       .json(new ApiResponse(200, responseData, 'Task statistics retrieved successfully'));
   });
 
-  static getDueReminders = asyncHandler(async (req, res) => {
-    const now = new Date();
 
-    const dueReminders = await Task.find({
-      reminder_date: { $lte: now },
-      status: 'todo',
-    }).populate('userId', 'email name');
-
-    return res
-      .status(200)
-      .json(new ApiResponse(200, dueReminders, 'Due reminders retrieved successfully'));
-  });
 }
 
 export default TaskController;

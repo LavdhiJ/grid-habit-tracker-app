@@ -5,6 +5,8 @@ import cors from 'cors';
 
 import dotenv from 'dotenv';
 
+import reminderRouter from './routes/reminder.routes.js';
+import SocketService from './services/SocketService.js';
 import { initializeCronJobs } from './jobs/cronJob.js';
 import userRouter from './routes/user.routes.js' 
 import taskRouter from './routes/task.routes.js'
@@ -33,11 +35,12 @@ app.use('/api/v1/users', userRouter);
 app.use('/api/v1/tasks' , taskRouter);
 app.use('/api/v1/memories' , memoryRouter);
 app.use("/api/v1/prompts", promptRouter);
-app.use("/api/v1/reflections", reflectionRouter);
+app.use("/api/reflections", reflectionRouter);
+app.use("/api/v1/reminders", reminderRouter);
 
 app.get('/', (req, res) => {
   res.send('Habit Tracker API is running...');
 });
-
- export {app} 
- //POST /api/v1/users/register
+initializeCronJobs();
+export {app} 
+//POST /api/v1/users/register

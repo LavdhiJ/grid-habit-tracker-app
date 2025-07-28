@@ -11,8 +11,7 @@ router.use(verifyJWT);
 router.post('/', TaskController.createTask);                    // POST /api/tasks
 router.get('/', TaskController.getTasks);                       // GET /api/tasks
 router.get('/stats', TaskController.getTaskStats);              // GET /api/tasks/stats
-          
-router.get('/reminders/due', TaskController.getDueReminders);   // GET /api/tasks/reminders/due
+   // GET /api/tasks/reminders/due
 router.get('/:id', TaskController.getTask);                     // GET /api/tasks/:id
 
 router.patch('/:id', TaskController.updateTask);                  // PUT /api/tasks/:id
